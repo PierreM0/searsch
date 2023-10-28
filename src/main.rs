@@ -1,11 +1,13 @@
 use priority_queue::PriorityQueue;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs::{read_dir, File},
-    io::{BufReader, Read},
-    path::Path,
+    fs::{read_dir, File, ReadDir},
+    io::{BufReader, Read, Write},
+    path::Path, 
 };
 
+#[derive(Serialize, Deserialize, Clone)]
 struct Document {
     word_count: HashMap<String, usize>,
     lenght: i32,
@@ -15,11 +17,12 @@ impl Document {
         Self { word_count, lenght }
     }
 }
+
+#[derive(Serialize, Deserialize, Clone)]
 struct Global {
     word_count: HashMap<String, Document>,
     lenght: i32,
 }
-
 impl Global {
     fn new(word_count: HashMap<String, Document>, lenght: i32) -> Self {
         Self { word_count, lenght }
@@ -46,26 +49,27 @@ fn words_time_by_documents(document: &str) -> Document {
     Document::new(word_count, counter)
 }
 
-fn main() {
-    let binding = vec!["Plain-Text".to_owned()];
-    let mut search_terms = Vec::<String>::new();
-    for w in binding {
-        search_terms.push(w.to_lowercase());
-    }
-
-    let directory_path = Path::new("./noboilerplate/scripts/");
-    let dir = read_dir(directory_path).unwrap();
-    let mut scanned_documents = Global::new(HashMap::new(), 0);
-
+fn scan_all_documents(dir: Option<ReadDir>, scanned_documents: &mut Global) -> Global {
+	let dir = match dir {
+    Some(data) => data,
+    None => {
+        	return scanned_documents.clone();
+    	},
+	};
     let mut counter = 0;
-
     for file in dir {
         counter += 1;
 
         let file_direntry = file.expect("File is a direntry");
 
         if file_direntry.file_type().expect("the file type").is_file() {
-            let file = File::open(file_direntry.path()).expect("it exists");
+            let file_name =
+file_direntry
+                    .path()
+                    .to_str()
+                    .expect("file exists")
+                    .to_owned();
+            let file = File::open(file_name.as_str()).unwrap();
 
             let mut buf_reader = BufReader::new(file);
             let mut file_content = String::new();
@@ -73,19 +77,97 @@ fn main() {
                 .read_to_string(&mut file_content)
                 .expect("read_to_string goes well");
 
+
+
+    if !scanned_documents.word_count.contains_key(file_name.as_str()) {
             let doc = words_time_by_documents(&file_content);
 
             scanned_documents.word_count.insert(
-                file_direntry
-                    .path()
-                    .to_str()
-                    .expect("file exists")
-                    .to_owned(),
+                file_name,
                 doc,
             );
+    } else { eprintln!("file: {file_name} was already in the cache");}
         }
     }
     scanned_documents.lenght = counter;
+    scanned_documents.clone()
+}
+
+fn print_help(arg : &'static str) {
+    eprint!("./searsch -d <directory> -s \"<search query>\"");
+   eprint!("{arg}");
+    std::process::exit(1);
+}
+
+fn main() {
+    let mut args = std::env::args().into_iter();
+    args.next();
+
+    let mut dir = String::new();
+    let mut search = String::new();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-d" | "--directory" => {
+                match args.next() {
+                    Some(a) => dir = a,
+                    None => print_help("-d"),
+                }
+            },
+            "-s" | "--search" => {
+                match args.next() {
+                    Some(a) => search = a,
+                    None => print_help("-s"),
+                }
+            },
+
+            "-h" | "--help" | _ => print_help(""),
+        }
+    }
+	let mut search_query = Vec::<String>::new();
+	search.split(' ').for_each(|e| {
+    	search_query.push(e.to_string());
+	});
+	search_in_directory(search_query, dir.as_str());
+}
+
+fn scan_path(path: &str) -> Global {
+
+	let dir: Option<ReadDir>;
+    if !path.is_empty() {
+        let directory_path = Path::new(path);
+        dir = Some(read_dir(directory_path).unwrap());
+    } else {
+        dir = None;
+    }
+
+    let data_path = "data.json";
+
+	let mut file = File::open(data_path);
+	if file.is_err() {
+    	{
+        	let _ = File::create(data_path);
+    	}
+    	file = File::open(data_path);
+	}
+
+	let mut documents: Global = serde_json::from_reader(BufReader::new(file.unwrap())).unwrap_or(Global::new(HashMap::new(), 0) );
+    let scanned_documents = scan_all_documents(dir, &mut documents);
+	let serialized = serde_json::to_string(&scanned_documents).unwrap();
+
+	let _ = File::create(data_path).unwrap().write_all(serialized.as_bytes()) ;
+
+    scanned_documents        
+}
+
+fn search_in_directory(search: Vec<String>, path: &str) {
+    let mut search_terms = Vec::<String>::new();
+
+    for w in search {
+        search_terms.push(w.to_lowercase());
+    }
+
+    let scanned_documents = scan_path(path);
 
     let mut priority_queue = PriorityQueue::<String, i32>::new();
 
@@ -95,7 +177,7 @@ fn main() {
     }
 
     for _ in 0..5 {
-        println!("{:#?}", priority_queue.pop());
+        println!("{:#?}", priority_queue.pop().unwrap().0);
     }
 }
 
