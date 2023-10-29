@@ -7,4 +7,4 @@ I use the noboilerplates scripts to try the search engine.
 # TODO:
 - [x] A way to save the state of the app.
 - [ ] Better UI
-- [ ] clean up all the unwrap() and expect()
+- [x] clean up all the unwrap() and expect()
