@@ -1,0 +1,2 @@
+[clippy]
+rustflags = ["-E","clippy::pedantic", "-E", "clippy::nursery", "-E", "clippy::unwrap_used"]
